@@ -43,12 +43,6 @@ echo "eula=true" > /opt/prod/mc-srv-01-home/eula.txt
 # Create start script Velocity
 sudo bash -c 'cat <<EOF > /opt/prod/mc-proxy-01/start-velocity.sh
 #!/bin/bash
-# Start Velocity Server for troubleshooting
-
-# Navigate to the directory containing the Velocity jar file
-cd /opt/prod/mc-proxy-01/
-
-# Start the Velocity server with the specified JVM options
 /usr/lib/jvm/java-21-amazon-corretto/bin/java \\
   -Xms1G \\
   -Xmx1G \\
