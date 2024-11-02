@@ -1,0 +1,248 @@
+# Minecraft Server Notes
+# Tested on VM 64-Bit ARM Ubuntu 24.04 LTS Server
+
+# Install some basics
+sudo apt install wget curl vim htop traceroute nmap build-essential screen tree openssh-server net-tools ca-certificates apt-transport-https gnupg
+
+# Install Java 21
+wget -O - https://apt.corretto.aws/corretto.key | sudo gpg --dearmor -o /usr/share/keyrings/corretto-keyring.gpg && \
+echo "deb [signed-by=/usr/share/keyrings/corretto-keyring.gpg] https://apt.corretto.aws stable main" | sudo tee /etc/apt/sources.list.d/corretto.list
+
+sudo apt-get update
+sudo apt-get install -y java-21-amazon-corretto-jdk libxi6 libxtst6 libxrender1
+
+# Setup local netstall folder
+sudo mkdir -p /opt/netstall
+sudo mkdir -p /opt/netstall/Minecraft
+
+# Get Application file
+curl -O --output-dir /opt/netstall/Minecraft https://api.papermc.io/v2/projects/velocity/versions/3.4.0-SNAPSHOT/builds/449/downloads/velocity-3.4.0-SNAPSHOT-449.jar
+curl -O --output-dir /opt/netstall/Minecraft https://api.papermc.io/v2/projects/paper/versions/1.21.1/builds/131/downloads/paper-1.21.1-131.jar
+
+# Create none admin user to start our worlds
+sudo useradd -m -s /bin/bash original-mc
+
+# Make our Minecraft group
+sudo useradd -m -s /bin/bash SRV-MC
+
+# Add Users to the Minecraft Server Group
+# This allows you to edit the folder and not break things
+# In this example I've added the user that will be calling the server.
+# ReRun this command with your user.
+sudo usermod -aG SRV-MC original-mc
+sudo usermod -aG SRV-MC mc # this is my admin on this simulation, you need to change this to your user.
+
+# Setup our servers
+# Velocity
+sudo cp /opt/netstall/Minecraft/velocity-3.4.0-SNAPSHOT-449.jar /opt/prod/mc-proxy-01/
+
+# Minecraft SRV 01
+sudo cp /opt/netstall/Minecraft/paper-1.21.1-131.jar /opt/prod/mc-srv-01-home/
+echo "eula=true" > /opt/prod/mc-srv-01-home/eula.txt
+
+# Create start script Velocity
+sudo bash -c 'cat <<EOF > /opt/prod/mc-proxy-01/start-velocity.sh
+#!/bin/bash
+# Start Velocity Server for troubleshooting
+
+# Navigate to the directory containing the Velocity jar file
+cd /opt/prod/mc-proxy-01/
+
+# Start the Velocity server with the specified JVM options
+/usr/lib/jvm/java-21-amazon-corretto/bin/java \\
+  -Xms1G \\
+  -Xmx1G \\
+  -XX:+UseG1GC \\
+  -XX:G1HeapRegionSize=4M \\
+  -XX:+UnlockExperimentalVMOptions \\
+  -XX:+ParallelRefProcEnabled \\
+  -XX:+AlwaysPreTouch \\
+  -XX:MaxInlineLevel=15 \\
+  -jar velocity*.jar
+EOF'
+
+# Set Velocity script as exec
+sudo chmod +x /opt/prod/mc-proxy-01/start-velocity.sh
+
+# Setup Velocity Service file
+sudo bash -c 'cat <<EOF > /etc/systemd/system/velocity.service
+[Unit]
+Description=Velocity Proxy Server
+After=network.target
+
+[Service]
+User=original-mc
+Group=SRV-MC
+WorkingDirectory=/opt/prod/mc-proxy-01
+ExecStart=/opt/prod/mc-proxy-01/start-velocity.sh
+Restart=on-failure
+RestartSec=10
+Nice=1
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
+EOF'
+
+# Create start script mc-srv-01-home
+sudo bash -c 'cat <<EOF > /opt/prod/mc-srv-01-home/start.sh
+#!/bin/bash
+# Start PaperMC Server
+
+/usr/lib/jvm/java-21-amazon-corretto/bin/java \\
+  -Xms4096M \\
+  -Xmx4096M \\
+  -XX:+AlwaysPreTouch \\
+  -XX:+DisableExplicitGC \\
+  -XX:+ParallelRefProcEnabled \\
+  -XX:+PerfDisableSharedMem \\
+  -XX:+UnlockExperimentalVMOptions \\
+  -XX:+UseG1GC \\
+  -XX:G1HeapRegionSize=8M \\
+  -XX:G1HeapWastePercent=5 \\
+  -XX:G1MaxNewSizePercent=40 \\
+  -XX:G1MixedGCCountTarget=4 \\
+  -XX:G1MixedGCLiveThresholdPercent=90 \\
+  -XX:G1NewSizePercent=30 \\
+  -XX:G1RSetUpdatingPauseTimePercent=5 \\
+  -XX:G1ReservePercent=20 \\
+  -XX:InitiatingHeapOccupancyPercent=15 \\
+  -XX:MaxGCPauseMillis=200 \\
+  -XX:MaxTenuringThreshold=1 \\
+  -XX:SurvivorRatio=32 \\
+  -Dusing.aikars.flags=https://mcflags.emc.gs \\
+  -Daikars.new.flags=true \\
+  -jar paper-1.21.1-131.jar nogui
+EOF'
+
+# Set minecraft script as exec
+sudo chmod +x /opt/prod/mc-srv-01-home/start.sh
+
+# Setup Minecraft Server Service file
+sudo bash -c 'cat <<EOF > /etc/systemd/system/minecraft-home.service
+[Unit]
+Description=PaperMC Server Home
+After=network.target
+
+[Service]
+User=original-mc
+Group=SRV-MC
+WorkingDirectory=/opt/prod/mc-srv-01-home
+ExecStart=/opt/prod/mc-srv-01-home/start.sh
+Restart=on-failure
+RestartSec=10
+Nice=1
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
+EOF'
+
+# Create our server.properties file
+sudo bash -c 'cat <<EOF > /opt/prod/mc-srv-01-home/server.properties
+#Minecraft server properties
+#Sat Nov 02 19:38:54 UTC 2024
+accepts-transfers=false
+allow-flight=false
+allow-nether=true
+broadcast-console-to-ops=true
+broadcast-rcon-to-ops=true
+bug-report-link=
+debug=false
+difficulty=easy
+enable-command-block=false
+enable-jmx-monitoring=false
+enable-query=false
+enable-rcon=false
+enable-status=true
+enforce-secure-profile=true
+enforce-whitelist=false
+entity-broadcast-range-percentage=100
+force-gamemode=false
+function-permission-level=2
+gamemode=survival
+generate-structures=true
+generator-settings={}
+hardcore=false
+hide-online-players=false
+initial-disabled-packs=
+initial-enabled-packs=vanilla
+level-name=world
+level-seed=
+level-type=minecraft\:normal
+log-ips=true
+max-chained-neighbor-updates=1000000
+max-players=20
+max-tick-time=60000
+max-world-size=29999984
+motd=A Minecraft Server
+network-compression-threshold=256
+online-mode=true
+op-permission-level=4
+player-idle-timeout=0
+prevent-proxy-connections=false
+pvp=true
+query.port=25565
+rate-limit=0
+rcon.password=
+rcon.port=25575
+region-file-compression=deflate
+require-resource-pack=false
+resource-pack=
+resource-pack-id=
+resource-pack-prompt=
+resource-pack-sha1=
+server-ip=0.0.0.0
+server-port=25567
+simulation-distance=10
+spawn-animals=true
+spawn-monsters=true
+spawn-npcs=true
+spawn-protection=16
+sync-chunk-writes=true
+text-filtering-config=
+use-native-transport=true
+view-distance=10
+white-list=false
+EOF'
+
+# Fix permissions
+sudo chown -R mc:SRV-MC /opt/prod/
+sudo chown -R mc:SRV-MC /opt/netstall/
+sudo chmod -R 2775 /opt/prod
+sudo chmod -R 2775 /opt/netstall
+
+# Enable services
+sudo systemctl daemon-reload
+sudo systemctl enable minecraft-home.service
+sudo systemctl enable velocity.service
+sudo systemctl restart minecraft-home.service
+sudo systemctl restart velocity.service
+
+# lets reboot and check our services
+sudo shutdown -r now
+
+# Status of Services
+sudo systemctl status velocity.service
+sudo systemctl status minecraft-home.service
+
+: << 'END_COMMENT'
+# Notes
+# At this point you have a working velocity server and Minecraft server.
+
+# Old Notes, started writing the config files, no need to make these edits
+# Create a backup of your server.properties file and change the IP address
+# sed -i.bak 's/^server-ip=.*/server-ip=0.0.0.0/' /opt/prod/mc-srv-01-home/server.properties
+# I use 0.0.0.0 as the generic setup
+# 
+# Need to change the port in MC, because velocity uses the same port.
+# sed -i 's/^server-port=25565.*/server-port=25567/' /opt/prod/mc-srv-01-home/server.properties
+
+# Troubleshooting
+# Star Velocity server, from it's local directory /opt/
+/usr/lib/jvm/java-21-amazon-corretto/bin/java -Xms1G -Xmx1G -XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:+AlwaysPreTouch -XX:MaxInlineLevel=15 -jar /opt/prod/mc-proxy-01/velocity*.jar
+
+# Start PaperMC Server for troubleshooting
+
+/usr/lib/jvm/java-21-amazon-corretto/bin/java -Xms4096M -Xmx4096M -XX:+AlwaysPreTouch -XX:+DisableExplicitGC -XX:+ParallelRefProcEnabled -XX:+PerfDisableSharedMem -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1HeapRegionSize=8M -XX:G1HeapWastePercent=5 -XX:G1MaxNewSizePercent=40 -XX:G1MixedGCCountTarget=4 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1NewSizePercent=30 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:G1ReservePercent=20 -XX:InitiatingHeapOccupancyPercent=15 -XX:MaxGCPauseMillis=200 -XX:MaxTenuringThreshold=1 -XX:SurvivorRatio=32 -Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true -jar /opt/prod/mc-srv-01-home/paper*.jar nogui
+END_COMMENT
