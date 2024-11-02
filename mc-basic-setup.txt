@@ -132,12 +132,10 @@ LimitNOFILE=4096
 WantedBy=multi-user.target
 EOF'
 
-/opt/prod/mc-srv-01-home/server.properties
-
 # Create our server.properties file
 # Now is a great time to make your edits, I'm keeping it simple in this example
 # need to update the IP and port
-sudo bash -c 'cat <<EOF > ~/Desktop/server.properties
+sudo bash -c 'cat <<EOF > /opt/prod/mc-srv-01-home/server.properties
 #Minecraft server properties
 #$(date)
 accepts-transfers=false
