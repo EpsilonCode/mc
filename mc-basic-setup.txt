@@ -2,7 +2,7 @@
 # Tested on VM 64-Bit ARM Ubuntu 24.04 LTS Server
 
 # Install some basics
-sudo apt install wget curl vim htop traceroute nmap build-essential screen tree openssh-server net-tools ca-certificates apt-transport-https gnupg maven zip
+sudo apt install wget curl vim htop traceroute nmap build-essential screen tree openssh-server net-tools ca-certificates apt-transport-https gnupg maven zip npm
 
 # Install Java 21
 wget -O - https://apt.corretto.aws/corretto.key | sudo gpg --dearmor -o /usr/share/keyrings/corretto-keyring.gpg && \
